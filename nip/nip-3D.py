@@ -1,99 +1,161 @@
 import curses
+import math
 import time
-import random
 
-ball_char = "o"
-paddle_char = "|"
+FOV = math.pi / 3
+DEPTH = 20.0
+SPEED = 4.0
+ROT_SPEED = 2.5
+JUMP_VEL = 6.0
+GRAVITY = 12.0
 
-def clamp(v, min_v, max_v):
-    return max(min_v, min(max_v, v))
+SHADES = " .:-=+*#%@"
+
+MAP = [
+    "################",
+    "#..............#",
+    "#.......##.....#",
+    "#..............#",
+    "#.....#........#",
+    "#..............#",
+    "#..............#",
+    "################",
+]
+
+MAP_W = len(MAP[0])
+MAP_H = len(MAP)
+
+px, py = 3.0, 3.0
+pa = 0.0
+pz = 0.0
+vy = 0.0
+on_ground = True
+
+entities = [
+    {"x": 6.0, "y": 3.0, "hp": 3, "hit": 0},
+    {"x": 10.0, "y": 5.0, "hp": 3, "hit": 0},
+]
+
+def cast_ray(px, py, angle):
+    dist = 0.0
+    step = 0.05
+    while dist < DEPTH:
+        dist += step
+        x = int(px + math.cos(angle) * dist)
+        y = int(py + math.sin(angle) * dist)
+        if x < 0 or x >= MAP_W or y < 0 or y >= MAP_H:
+            return DEPTH
+        if MAP[y][x] == "#":
+            return dist
+    return DEPTH
+
+def punch():
+    global entities
+    for e in entities:
+        dx = e["x"] - px
+        dy = e["y"] - py
+        dist = math.hypot(dx, dy)
+        ang = math.atan2(dy, dx) - pa
+        if abs(ang) < 0.4 and dist < 2:
+            e["hp"] -= 1
+            e["hit"] = time.time() + 0.2
+
+def render(stdscr, width, height):
+    screen = [[" " for _ in range(width)] for _ in range(height)]
+
+    for x in range(width):
+        ray_angle = (pa - FOV / 2) + (x / width) * FOV
+        dist = cast_ray(px, py, ray_angle)
+
+        ceiling = int(height / 2 - height / dist - pz * 4)
+        floor = int(height - ceiling)
+
+        for y in range(height):
+            if y < ceiling:
+                continue
+            elif y > floor:
+                screen[y][x] = "."
+            else:
+                idx = int((1 - min(dist / DEPTH, 1)) * (len(SHADES) - 1))
+                screen[y][x] = SHADES[idx]
+
+    for e in entities:
+        dx = e["x"] - px
+        dy = e["y"] - py
+        dist = math.hypot(dx, dy)
+        angle = math.atan2(dy, dx) - pa
+
+        if abs(angle) < FOV / 2 and dist > 0.5:
+            sx = int((angle + FOV / 2) / FOV * width)
+            size = max(1, int(height / dist))
+
+            for y in range(-size // 2, size // 2):
+                sy = int(height / 2 + y - pz * 4)
+                if 0 <= sy < height and 0 <= sx < width:
+                    screen[sy][sx] = "@" if e["hit"] > time.time() else "#"
+
+    for y in range(height):
+        line = "".join(screen[y])
+        stdscr.addstr(y, 0, line[:width])
 
 def main(stdscr):
+    global px, py, pa, pz, vy, on_ground
+
     curses.curs_set(0)
-    stdscr.nodelay(1)
-    stdscr.timeout(30)
+    stdscr.nodelay(True)
 
-    sh, sw = stdscr.getmaxyx()
-
-    paddle_h = 5
-    player_x = 2
-    ai_x = sw - 3
-
-    player_y = sh // 2
-    ai_y = sh // 2
-
-    ball_x = sw // 2
-    ball_y = sh // 2
-    ball_dx = 1
-    ball_dy = 1
-
-    player_score = 0
-    ai_score = 0
+    last = time.time()
 
     while True:
-        stdscr.clear()
+        height, width = stdscr.getmaxyx()
 
-        sh, sw = stdscr.getmaxyx()
+        height = max(10, height)
+        width = max(20, width)
 
-        if sh < 10 or sw < 30:
-            stdscr.addstr(0, 0, "terminal too small grow it up")
-            stdscr.refresh()
-            continue
+        now = time.time()
+        dt = now - last
+        last = now
 
         key = stdscr.getch()
 
-        if key == curses.KEY_UP:
-            player_y -= 1
-        elif key == curses.KEY_DOWN:
-            player_y += 1
+        if key == ord("q"):
+            break
 
-        player_y = clamp(player_y, 1, sh - paddle_h - 1)
+        if key == ord("w"):
+            nx = px + math.cos(pa) * SPEED * dt
+            ny = py + math.sin(pa) * SPEED * dt
+            if MAP[int(ny)][int(nx)] != "#":
+                px, py = nx, ny
 
-        if ball_y < ai_y:
-            ai_y -= 1
-        elif ball_y > ai_y:
-            ai_y += 1
+        if key == ord("s"):
+            nx = px - math.cos(pa) * SPEED * dt
+            ny = py - math.sin(pa) * SPEED * dt
+            if MAP[int(ny)][int(nx)] != "#":
+                px, py = nx, ny
 
-        ai_y = clamp(ai_y, 1, sh - paddle_h - 1)
+        if key == ord("a"):
+            pa -= ROT_SPEED * dt
+        if key == ord("d"):
+            pa += ROT_SPEED * dt
 
-        ball_x += ball_dx
-        ball_y += ball_dy
+        if key == ord(" " ) and on_ground:
+            vy = JUMP_VEL
+            on_ground = False
 
-        if ball_y <= 1 or ball_y >= sh - 2:
-            ball_dy *= -1
+        vy -= GRAVITY * dt
+        pz += vy * dt
 
-        if ball_x == player_x + 1:
-            if player_y <= ball_y <= player_y + paddle_h:
-                ball_dx *= -1
+        if pz <= 0:
+            pz = 0
+            vy = 0
+            on_ground = True
 
-        if ball_x == ai_x - 1:
-            if ai_y <= ball_y <= ai_y + paddle_h:
-                ball_dx *= -1
+        if key == ord("e"):
+            punch()
 
-        if ball_x <= 0:
-            ai_score += 1
-            ball_x = sw // 2
-            ball_y = sh // 2
-
-        if ball_x >= sw - 1:
-            player_score += 1
-            ball_x = sw // 2
-            ball_y = sh // 2
-
-        for i in range(paddle_h):
-            if 0 < player_y + i < sh:
-                stdscr.addstr(player_y + i, player_x, paddle_char)
-            if 0 < ai_y + i < sh:
-                stdscr.addstr(ai_y + i, ai_x, paddle_char)
-
-        if 0 < ball_y < sh and 0 < ball_x < sw:
-            stdscr.addstr(ball_y, ball_x, ball_char)
-
-        score_text = f"{player_score} vs {ai_score}"
-        stdscr.addstr(0, sw // 2 - len(score_text) // 2, score_text)
-
+        stdscr.clear()
+        render(stdscr, width, height)
         stdscr.refresh()
-        time.sleep(0.03)
 
 if __name__ == "__main__":
     curses.wrapper(main)
