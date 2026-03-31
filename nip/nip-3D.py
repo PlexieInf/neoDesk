@@ -49,6 +49,14 @@ def cast_ray(px, py, angle):
             return dist
     return DEPTH
 
+def safe_draw(stdscr, y, x, ch):
+    try:
+        if y < 0 or x < 0:
+            return
+        stdscr.addch(y, x, ch)
+    except:
+        pass
+
 def punch():
     global entities
     for e in entities:
@@ -60,17 +68,20 @@ def punch():
             e["hp"] -= 1
             e["hit"] = time.time() + 0.2
 
-def render(stdscr, width, height):
-    screen = [[" " for _ in range(width)] for _ in range(height)]
+def render(stdscr, w, h):
+    screen = [[" " for _ in range(w)] for _ in range(h)]
 
-    for x in range(width):
-        ray_angle = (pa - FOV / 2) + (x / width) * FOV
+    for x in range(w):
+        ray_angle = (pa - FOV / 2) + (x / w) * FOV
         dist = cast_ray(px, py, ray_angle)
 
-        ceiling = int(height / 2 - height / dist - pz * 4)
-        floor = int(height - ceiling)
+        ceiling = int(h / 2 - h / max(dist, 0.0001) - pz * 4)
+        floor = int(h - ceiling)
 
-        for y in range(height):
+        for y in range(h):
+            if y < 0 or y >= h or x < 0 or x >= w:
+                continue
+
             if y < ceiling:
                 continue
             elif y > floor:
@@ -86,31 +97,35 @@ def render(stdscr, width, height):
         angle = math.atan2(dy, dx) - pa
 
         if abs(angle) < FOV / 2 and dist > 0.5:
-            sx = int((angle + FOV / 2) / FOV * width)
-            size = max(1, int(height / dist))
+            sx = int((angle + FOV / 2) / FOV * w)
+            size = max(1, int(h / max(dist, 0.1)))
 
             for y in range(-size // 2, size // 2):
-                sy = int(height / 2 + y - pz * 4)
-                if 0 <= sy < height and 0 <= sx < width:
+                sy = int(h / 2 + y - pz * 4)
+                if 0 <= sy < h and 0 <= sx < w:
                     screen[sy][sx] = "@" if e["hit"] > time.time() else "#"
 
-    for y in range(height):
+    for y in range(h):
         line = "".join(screen[y])
-        stdscr.addstr(y, 0, line[:width])
+        try:
+            stdscr.addstr(y, 0, line[:w])
+        except:
+            continue
 
 def main(stdscr):
     global px, py, pa, pz, vy, on_ground
 
     curses.curs_set(0)
     stdscr.nodelay(True)
+    stdscr.timeout(0)
 
     last = time.time()
 
     while True:
-        height, width = stdscr.getmaxyx()
+        h, w = stdscr.getmaxyx()
 
-        height = max(10, height)
-        width = max(20, width)
+        h = max(10, h)
+        w = max(20, w)
 
         now = time.time()
         dt = now - last
@@ -154,7 +169,7 @@ def main(stdscr):
             punch()
 
         stdscr.clear()
-        render(stdscr, width, height)
+        render(stdscr, w, h)
         stdscr.refresh()
 
 if __name__ == "__main__":
