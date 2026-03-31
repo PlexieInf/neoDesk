@@ -5,8 +5,8 @@ import time
 # ================== SETTINGS ==================
 FOV = math.pi / 3
 DEPTH = 20.0
-SPEED = 12.0          # Fast movement
-ROT_SPEED = 6.0       # Fast turning
+SPEED = 12.0
+ROT_SPEED = 6.0
 JUMP_VEL = 8.0
 GRAVITY = 18.0
 
@@ -62,8 +62,17 @@ def punch():
             e["hp"] -= 1
             e["hit"] = time.time() + 0.25
 
+def safe_addch(stdscr, y, x, ch, color=0):
+    """Ultra-safe draw - never write to bottom-right corner"""
+    h, w = stdscr.getmaxyx()
+    if y < 0 or y >= h - 1 or x < 0 or x >= w - 1:   # avoid bottom-right
+        return
+    try:
+        stdscr.addch(y, x, ch, curses.color_pair(color))
+    except:
+        pass
+
 def render(stdscr, w, h):
-    # Safe rendering with bounds checking
     for x in range(w):
         ray_angle = (pa - FOV / 2) + (x / w) * FOV
         dist = cast_ray(px, py, ray_angle)
@@ -76,32 +85,16 @@ def render(stdscr, w, h):
         wall_char = WALL_SHADES[shade_idx]
 
         for y in range(h):
-            if y >= h or x >= w:
-                continue
-
             if y < ceiling:
-                # Ceiling
-                try:
-                    stdscr.addch(y, x, ' ', curses.color_pair(1))
-                except:
-                    pass
+                safe_addch(stdscr, y, x, ' ', 1)          # Ceiling
             elif y < floor_start:
-                # Wall
-                try:
-                    stdscr.addch(y, x, wall_char, curses.color_pair(2))
-                except:
-                    pass
+                safe_addch(stdscr, y, x, wall_char, 2)    # Wall
             else:
-                # Floor with simple shading
-                try:
-                    if (y - h // 2) > h * 0.3:
-                        stdscr.addch(y, x, '#', curses.color_pair(3))
-                    else:
-                        stdscr.addch(y, x, '.', curses.color_pair(4))
-                except:
-                    pass
+                # Floor
+                floor_char = '#' if (y - h // 2) > h * 0.25 else '.'
+                safe_addch(stdscr, y, x, floor_char, 3)
 
-    # Draw entities safely
+    # Entities
     for e in entities:
         dx = e["x"] - px
         dy = e["y"] - py
@@ -113,28 +106,23 @@ def render(stdscr, w, h):
             size = max(1, int(h / max(dist, 0.5)))
 
             char = '@' if e["hit"] > time.time() else 'E'
-            color = curses.color_pair(5) if e["hit"] > time.time() else curses.color_pair(6)
+            color = 4 if e["hit"] > time.time() else 5
 
-            for dy_offset in range(-size//2, size//2 + 1):
-                sy = int(h / 2 + dy_offset - pz * 4)
-                if 0 <= sy < h and 0 <= sx < w:
-                    try:
-                        stdscr.addch(sy, sx, char, color)
-                    except:
-                        pass
+            for offset in range(-size//2, size//2 + 1):
+                sy = int(h / 2 + offset - pz * 4)
+                if 0 <= sy < h:
+                    safe_addch(stdscr, sy, sx, char, color)
 
 def main(stdscr):
     global px, py, pa, pz, vy, on_ground
 
-    # Initialize colors safely
     curses.start_color()
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_CYAN, -1)      # Ceiling
     curses.init_pair(2, curses.COLOR_WHITE, -1)     # Wall
-    curses.init_pair(3, curses.COLOR_BLUE, -1)      # Far floor
-    curses.init_pair(4, curses.COLOR_GREEN, -1)     # Near floor
-    curses.init_pair(5, curses.COLOR_RED, -1)       # Hit enemy
-    curses.init_pair(6, curses.COLOR_MAGENTA, -1)   # Enemy
+    curses.init_pair(3, curses.COLOR_BLUE, -1)      # Floor
+    curses.init_pair(4, curses.COLOR_RED, -1)       # Hit enemy
+    curses.init_pair(5, curses.COLOR_MAGENTA, -1)   # Enemy
 
     curses.curs_set(0)
     stdscr.nodelay(True)
@@ -147,11 +135,11 @@ def main(stdscr):
         h, w = stdscr.getmaxyx()
         if h < 15 or w < 40:
             stdscr.clear()
-            stdscr.addstr(2, 2, "Window too small! Make it larger.")
+            stdscr.addstr(2, 2, "Please make the terminal window larger!")
             stdscr.refresh()
             if stdscr.getch() != -1:
                 break
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
 
         dt = time.time() - last
@@ -169,13 +157,13 @@ def main(stdscr):
         if ord('w') in keys or curses.KEY_UP in keys:
             nx = px + math.cos(pa) * SPEED * dt
             ny = py + math.sin(pa) * SPEED * dt
-            if 0 <= int(ny) < MAP_H and 0 <= int(nx) < MAP_W and MAP[int(ny)][int(nx)] != "#":
+            if MAP[int(ny)][int(nx)] != "#":
                 px, py = nx, ny
 
         if ord('s') in keys or curses.KEY_DOWN in keys:
             nx = px - math.cos(pa) * SPEED * dt
             ny = py - math.sin(pa) * SPEED * dt
-            if 0 <= int(ny) < MAP_H and 0 <= int(nx) < MAP_W and MAP[int(ny)][int(nx)] != "#":
+            if MAP[int(ny)][int(nx)] != "#":
                 px, py = nx, ny
 
         if ord('a') in keys or curses.KEY_LEFT in keys:
@@ -184,11 +172,10 @@ def main(stdscr):
             pa += ROT_SPEED * dt
 
         # Jump
-        if (ord(' ') in keys or ord('\n') in keys) and on_ground:
+        if (ord(' ') in keys) and on_ground:
             vy = JUMP_VEL
             on_ground = False
 
-        # Physics
         vy -= GRAVITY * dt
         pz += vy * dt
         if pz <= 0:
@@ -196,30 +183,28 @@ def main(stdscr):
             vy = 0
             on_ground = True
 
-        # Punch
         if ord('e') in keys:
             punch()
 
-        # Quit
         if ord('q') in keys:
             break
 
         stdscr.clear()
         render(stdscr, w, h)
 
-        # Simple HUD
+        # HUD (safe position)
         try:
-            stdscr.addstr(0, 0, f"X:{px:.1f} Y:{py:.1f} Angle:{math.degrees(pa):.0f}°", curses.color_pair(2))
-            stdscr.addstr(h-1, 0, "WASD/Arrows=Move  E=Punch  Space=Jump  Q=Quit", curses.color_pair(1))
+            stdscr.addstr(0, 0, f"X:{px:.1f} Y:{py:.1f} A:{math.degrees(pa):.0f}°", curses.color_pair(2))
+            stdscr.addstr(h-2, 0, "WASD/Arrows = Move   E = Punch   Space = Jump   Q = Quit", curses.color_pair(1))
         except:
             pass
 
         stdscr.refresh()
-        time.sleep(0.016)  # ~60 FPS
+        time.sleep(0.016)
 
 if __name__ == "__main__":
     try:
         curses.wrapper(main)
     except Exception as e:
-        print(f"Curses error: {e}")
-        input("Press Enter to continue...")
+        print(f"Error: {e}")
+        input("Press Enter to exit...")
