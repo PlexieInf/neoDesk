@@ -1,57 +1,42 @@
 import speech_recognition as sr
 import traceback
-
-print("starting system")
+import time
 
 r = sr.Recognizer()
 
-try:
-    mics = sr.Microphone.list_microphone_names()
-    print("\nmics detected:", len(mics))
+print("booting")
 
-    if len(mics) == 0:
-        print("no microphones found at all")
-        exit()
+mics = sr.Microphone.list_microphone_names()
 
-    print("\navailable mics\n")
-    for i, name in enumerate(mics):
-        print(str(i) + " - " + str(name))
-
-    print("\nwaiting for your input now")
-    choice_raw = input("type mic index and press enter: ")
-
-    print("you typed:", choice_raw)
-
-    choice = int(choice_raw)
-
-    if choice < 0 or choice >= len(mics):
-        print("invalid index out of range")
-        exit()
-
-    print("selected mic:", mics[choice])
-
-except Exception:
-    print("setup crash")
-    traceback.print_exc()
+if len(mics) == 0:
+    print("no mic found")
     exit()
+
+for i, name in enumerate(mics):
+    print(i, name)
+
+choice = int(input("mic index: "))
 
 mic = sr.Microphone(device_index=choice)
 
+print("selected:", mics[choice])
+
 def calibrate():
     print("calibrating")
+    with mic as source:
+        r.adjust_for_ambient_noise(source, duration=2)
+    print("done")
+
+def listen_once():
     try:
         with mic as source:
-            r.adjust_for_ambient_noise(source, duration=2)
-        print("done calibrating")
-    except:
-        print("calibration failed")
+            print("listening")
+            audio = r.listen(source, timeout=5, phrase_time_limit=10)
+            return audio
+    except Exception:
+        print("listen crash")
         traceback.print_exc()
-
-def listen():
-    with mic as source:
-        print("listening...")
-        audio = r.listen(source, timeout=5, phrase_time_limit=10)
-    return audio
+        return None
 
 def recognize(audio):
     try:
@@ -62,14 +47,20 @@ def recognize(audio):
 
 def main():
     calibrate()
-    print("ready")
+
+    i = 0
 
     while True:
-        try:
-            audio = listen()
-            recognize(audio)
-        except Exception:
-            print("loop error")
-            traceback.print_exc()
+        i += 1
+        print("\nloop", i)
+
+        audio = listen_once()
+
+        if audio is None:
+            continue
+
+        recognize(audio)
+
+        time.sleep(0.1)
 
 main()
