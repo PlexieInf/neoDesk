@@ -9,7 +9,7 @@ print("booting")
 mics = sr.Microphone.list_microphone_names()
 
 if len(mics) == 0:
-    print("no mic found")
+    print("no mics found")
     exit()
 
 for i, name in enumerate(mics):
@@ -25,16 +25,15 @@ def calibrate():
     print("calibrating")
     with mic as source:
         r.adjust_for_ambient_noise(source, duration=2)
-    print("done")
+    print("calibration done")
 
-def listen_once():
+def listen_once(source):
     try:
-        with mic as source:
-            print("listening")
-            audio = r.listen(source, timeout=5, phrase_time_limit=10)
-            return audio
+        print("listening")
+        audio = r.listen(source, timeout=5, phrase_time_limit=10)
+        return audio
     except Exception:
-        print("listen crash")
+        print("listen error")
         traceback.print_exc()
         return None
 
@@ -48,18 +47,21 @@ def recognize(audio):
 def main():
     calibrate()
 
-    i = 0
+    print("starting loop")
 
     while True:
-        i += 1
-        print("\nloop", i)
+        try:
+            with mic as source:
+                audio = listen_once(source)
 
-        audio = listen_once()
+            if audio is None:
+                continue
 
-        if audio is None:
-            continue
+            recognize(audio)
 
-        recognize(audio)
+        except Exception:
+            print("loop crash")
+            traceback.print_exc()
 
         time.sleep(0.1)
 
