@@ -1,92 +1,75 @@
 import speech_recognition as sr
 import traceback
-import time
+
+print("starting system")
 
 r = sr.Recognizer()
 
-print("booting voice system")
-
-mics = sr.Microphone.list_microphone_names()
-
-if not mics:
-    print("no mics detected system is silent")
-    exit()
-
-print("\navailable microphones\n")
-
-for i, name in enumerate(mics):
-    print(i, name)
-
 try:
-    choice = int(input("\npick mic index "))
-except:
-    print("invalid input bro typed air")
-    exit()
+    mics = sr.Microphone.list_microphone_names()
+    print("\nmics detected:", len(mics))
 
-if choice < 0 or choice >= len(mics):
-    print("that mic index does not exist in this reality")
+    if len(mics) == 0:
+        print("no microphones found at all")
+        exit()
+
+    print("\navailable mics\n")
+    for i, name in enumerate(mics):
+        print(str(i) + " - " + str(name))
+
+    print("\nwaiting for your input now")
+    choice_raw = input("type mic index and press enter: ")
+
+    print("you typed:", choice_raw)
+
+    choice = int(choice_raw)
+
+    if choice < 0 or choice >= len(mics):
+        print("invalid index out of range")
+        exit()
+
+    print("selected mic:", mics[choice])
+
+except Exception:
+    print("setup crash")
+    traceback.print_exc()
     exit()
 
 mic = sr.Microphone(device_index=choice)
 
-print("\nselected mic")
-print(mics[choice])
-
 def calibrate():
-    print("calibrating noise profile")
+    print("calibrating")
     try:
         with mic as source:
             r.adjust_for_ambient_noise(source, duration=2)
-        print("calibration done")
-    except Exception:
+        print("done calibrating")
+    except:
         print("calibration failed")
         traceback.print_exc()
 
 def listen():
-    try:
-        with mic as source:
-            print("listening")
-            audio = r.listen(source, timeout=5, phrase_time_limit=10)
-        return audio
-    except Exception:
-        print("listen failed")
-        traceback.print_exc()
-        return None
+    with mic as source:
+        print("listening...")
+        audio = r.listen(source, timeout=5, phrase_time_limit=10)
+    return audio
 
 def recognize(audio):
     try:
         text = r.recognize_google(audio)
-        print("you said", text)
-    except sr.UnknownValueError:
-        print("could not understand audio")
-    except sr.RequestError:
-        print("api request failed internet or google being weird")
+        print("you said:", text)
     except Exception:
-        print("recognition crash")
         traceback.print_exc()
 
 def main():
-    print("assistant online")
     calibrate()
-
-    count = 0
+    print("ready")
 
     while True:
-        count += 1
-        print("\ncycle", count, time.time())
+        try:
+            audio = listen()
+            recognize(audio)
+        except Exception:
+            print("loop error")
+            traceback.print_exc()
 
-        audio = listen()
-
-        if audio is None:
-            continue
-
-        recognize(audio)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("stopped manually")
-    except Exception:
-        print("fatal error")
-        traceback.print_exc()
+main()
